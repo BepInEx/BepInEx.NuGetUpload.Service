@@ -37,7 +37,7 @@ body:
         You can use [TFM identifiers](https://docs.microsoft.com/en-us/dotnet/standard/frameworks#supported-target-frameworks) to describe .NET API versions.  
         When listing dependencies, mention their NuGet ID and the version that you want to depend on.
         
-        Example (package should have both .NET Framework 3.5 and .NET Standard 2 support):
+        Example of a package that has both .NET Framework 3.5 and .NET Standard 2.0 targets:
         
         * `net35`
             * `Newtonsoft.JSON`, `13.0.0`
