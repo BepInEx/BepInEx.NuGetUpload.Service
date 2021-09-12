@@ -11,12 +11,12 @@ body:
         > By filling out this request you assure that you will maintain the assemblies.  
         > If the package is left unmaintained, others are free to request maintainer rights for the package.
   - type: input
-      id: game-name
-      attributes:
-        label: Game name
-        description: "What's the game you want upload permissions for"
-      validations:
-        required: true
+    id: game-name
+    attributes:
+      label: Game name
+      description: "What's the game you want upload permissions for"
+    validations:
+      required: true
   - type: dropdown
     id: request-type
     attributes:
