@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 
@@ -21,35 +20,35 @@ namespace NuGetUpload.Utils
                 Strip(typeDef);
                 Publicize(typeDef);
             }
+
             module.Write(path);
         }
 
         private static void Publicize(TypeDef td)
         {
-            static bool HasCompilerGenerated(IHasCustomAttribute ca) =>
-                ca.CustomAttributes.Any(c =>
-                    c.AttributeType.FullName == "System.Runtime.CompilerServices.CompilerGeneratedAttribute");
-
-            if (HasCompilerGenerated(td))
-                return;
-
             td.Attributes &= ~TypeAttributes.VisibilityMask;
             if (td.IsNested)
                 td.Attributes |= TypeAttributes.NestedPublic;
             else
                 td.Attributes |= TypeAttributes.Public;
-            
+
             foreach (var methodDef in td.Methods)
             {
-                if (HasCompilerGenerated(methodDef))
+                if (methodDef.IsCompilerControlled)
                     continue;
+
                 methodDef.Attributes &= ~MethodAttributes.MemberAccessMask;
                 methodDef.Attributes |= MethodAttributes.Public;
             }
-            
+
+            var eventNames = td.Events.Select(e => e.Name).ToHashSet();
             foreach (var fieldDef in td.Fields)
             {
-                if (HasCompilerGenerated(fieldDef))
+                if (fieldDef.IsCompilerControlled)
+                    continue;
+
+                // Skip event backing fields
+                if (eventNames.Contains(fieldDef.Name))
                     continue;
 
                 fieldDef.Attributes &= ~FieldAttributes.FieldAccessMask;
@@ -61,7 +60,7 @@ namespace NuGetUpload.Utils
         {
             if (td.IsEnum || td.IsInterface)
                 return;
-            
+
             foreach (var methodDef in td.Methods)
             {
                 if (!methodDef.HasBody)
