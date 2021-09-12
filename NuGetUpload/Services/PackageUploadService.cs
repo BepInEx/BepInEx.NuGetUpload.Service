@@ -136,6 +136,7 @@ namespace NuGetUpload.Services
                 Authors = info.Authors,
                 Version = packageVersion,
                 Description = info.Description,
+                DevelopmentDependency = true,
                 DependencyGroups = info.FrameworkTargets.Select(kv =>
                     new PackageDependencyGroup(
                         NuGetFramework.Parse(kv.Key),
