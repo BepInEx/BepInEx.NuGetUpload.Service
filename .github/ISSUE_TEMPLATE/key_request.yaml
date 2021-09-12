@@ -46,7 +46,7 @@ body:
     validations:
       required: true
   - type: textarea
-    id: package-info
+    id: assembly-names
     attributes:
       label: Allowed assembly names
       description: | 
