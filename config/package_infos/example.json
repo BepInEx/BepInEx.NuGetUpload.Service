@@ -1,0 +1,9 @@
+﻿{
+  "packageId": "Test.GameLibs",
+  "description": "Game libraries for the next game",
+  "authors": ["Test Authors"],
+  "frameworkTargets": {
+    "net35": {}
+  },
+  "allowedAssemblies": ["assembly-csharp", "assembly-csharp-firstpass"]
+}

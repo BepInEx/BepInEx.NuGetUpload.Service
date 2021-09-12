@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net5.0</TargetFramework>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="dnlib" Version="3.3.4" />
+      <PackageReference Include="NuGet.Packaging" Version="6.0.0-preview.3" />
+      <PackageReference Include="NuGet.Protocol" Version="6.0.0-preview.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="package_infos\**" />
+      <Compile Remove="uploads\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Remove="package_infos\**" />
+      <EmbeddedResource Remove="uploads\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Remove="package_infos\**" />
+      <None Remove="uploads\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Remove="package_infos\**" />
+      <Content Remove="uploads\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="package_infos\keymap.json" />
+      <_ContentIncludedByDefault Remove="package_infos\test.json" />
+    </ItemGroup>
+
+</Project>

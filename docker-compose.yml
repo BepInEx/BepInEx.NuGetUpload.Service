@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  nugetupload:
+    build:
+      context: .
+      dockerfile: NuGetUpload/Dockerfile
+    env_file: ./config/.env
+    restart: unless-stopped
+    ports:
+      - "5000:80"
+    volumes:
+      - ./config/package_infos:/app/package_infos
+    tmpfs:
+      - /app/uploads
+    networks:
+      - nuget_upload
+  
+networks:
+  nuget_upload:
+    external: true

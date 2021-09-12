@@ -1,0 +1,143 @@
+@page "/"
+@using Microsoft.Extensions.Logging
+@using Microsoft.Extensions.Options
+@using System.Globalization
+@inject PackageUploadService packageUpload;
+@inject GamePackageInfoService packageInfo;
+@inject ILogger<Index> logger;
+@inject IOptions<NugetOptions> nugetOptions;
+
+<div class="row">
+    <h1>Upload game package</h1>
+    <p>
+        Use the page to upload game-specific assemblies to the <a href="@nugetOptions.Value.PublicHost/">BepInEx NuGet feed</a>.
+    </p>
+</div>
+
+<div class="row">
+    <form class="col-lg-6">
+        <div class="mb-3">
+            <label for="keyInput" class="form-label">Upload key</label>
+            <input type="password" class="form-control @(KeyInvalid ? "is-invalid" : "")" id="keyInput" @bind="key"/>
+            @if (keyError)
+            {
+                <div class="invalid-feedback">
+                    Invalid key. Please check it corresponds to any game and try again.
+                </div>
+            }
+            <div class="form-text">
+                The key is used to correctly identify the game and the package.
+                Do not share it with anyone else!
+            </div>
+        </div>
+        <div class="mb-3">
+            <label for="uploadFiles" class="form-label">Assemblies to package</label>
+            <InputFile id="uploadFiles" class="form-control" OnChange="@HandleFiles" multiple/>
+            <div class="form-text">Max @packageUpload.Options.MaxFiles .dll files. Max size of each file: @(Math.Round(packageUpload.Options.MaxFileSizeMB, 2)) MB.</div>
+        </div>
+        @if (fileNameErrors.Count > 0)
+        {
+            <div class="mb-3">
+                <div class="alert alert-danger">
+                    <p>
+                        <strong>File upload encountered the following errors:</strong>
+                    </p>
+                    <ul>
+                        @foreach (var e in fileNameErrors)
+                        {
+                            <li>@e</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+        <div class="mb-3">
+            <button class="btn btn-primary" @onclick="UploadPackage" @onclick:preventDefault="true" type="submit" disabled="@(!CanUpload)">Upload</button>
+        </div>
+    </form>
+</div>
+
+@if (uploading)
+{
+    <div class="row fw-light justify-content-center" style="font-size: 0.8rem;">
+        <div class="col-auto">@status</div>
+    </div>
+    <div class="progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated bg-@(progressError ? "danger" : "primary")" style="width: @Math.Round(percent, 1).ToString(CultureInfo.InvariantCulture)%"></div>
+    </div>
+}
+
+@if (uploadedPackageUrl is not null)
+{
+    <div class="alert alert-success">
+        Upload complete! <a href="@uploadedPackageUrl">View package on NuGet.</a>
+    </div>
+}
+
+@code {
+    string key = string.Empty;
+    readonly List<IBrowserFile> assemblies = new();
+    readonly List<string> fileNameErrors = new();
+    bool uploading;
+    string uploadedPackageUrl = null;
+    double percent;
+    string status = string.Empty;
+    bool progressError;
+    bool keyError;
+
+    bool KeyInvalid => keyError || key.Length > 0 && key.Length != GamePackageInfoService.KEY_LENGTH;
+    
+    bool CanUpload => key.Length == GamePackageInfoService.KEY_LENGTH && assemblies.Count > 0;
+
+    private async Task UploadPackage()
+    {
+        var info = packageInfo.GetPackage(key);
+        keyError = info is null;
+        if (keyError)
+            return;
+        
+        progressError = false;
+        uploading = true;
+        status = "Started upload...";
+        percent = 0.0;
+        uploadedPackageUrl = null;
+        try
+        {
+            await foreach (var (p, s) in packageUpload.UploadPackage(info, assemblies))
+            {
+                percent = p;
+                status = s;
+                StateHasChanged();
+            }
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "Failed to upload!");
+            status = $"Got error: {e.Message}";
+            progressError = true;
+            return;
+        }
+        uploading = false;
+        uploadedPackageUrl = $"{nugetOptions.Value.PublicHost}/packages/{info.PackageId}";
+    }
+
+    private void HandleFiles(InputFileChangeEventArgs e)
+    {
+        fileNameErrors.Clear();
+        if (e.FileCount > packageUpload.Options.MaxFiles)
+        {
+            fileNameErrors.Add($"Too many files, only {packageUpload.Options.MaxFiles} can be uploaded.");
+            return;
+        }
+        assemblies.Clear();
+        foreach (var f in e.GetMultipleFiles(packageUpload.Options.MaxFiles))
+        {
+            if (f.Size > packageUpload.MaxFileSize)
+                fileNameErrors.Add($"{f.Name} is too large to be uploaded. File's size is {Math.Round(f.Size / (1024.0 * 1024.0), 2)} MB, but max size is {Math.Round(packageUpload.Options.MaxFileSizeMB, 2)} MB.");
+            if (!packageUpload.IsValidName(f.Name))
+                fileNameErrors.Add($"{f.Name} has invalid filename. Allowed characters: A-z, 0-9, ., -, _");
+            assemblies.Add(f);
+        }
+    }
+
+}
