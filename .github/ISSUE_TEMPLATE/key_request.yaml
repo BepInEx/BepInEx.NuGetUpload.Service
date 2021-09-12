@@ -1,0 +1,96 @@
+name: Request to add or update upload key
+description: Request upload key in order to upload game assemblies to the service
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request an upload key for a game assembly package.
+        The upload key will allow you to upload game assemblies to the [BepInEx NuGet feed](https://nuget.bepinex.dev/).
+        
+        > **NOTE**  
+        > By filling out this request you assure that you will maintain the assemblies.  
+        > If the package is left unmaintained, others are free to request maintainer rights for the package.
+- type: input
+    id: game-name
+    attributes:
+      label: Game name
+      description: "What's the game you want upload permissions for"
+    validations:
+      required: true
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: Request type
+      multiple: false
+      options:
+        - Adding a new game to the feed
+        - Updating information of the existing game on the feed
+        - Resetting upload key for the existing game on the feed
+    validations:
+      required: true
+  - type: textarea
+    id: package-info
+    attributes:
+      label: Target frameworks, package dependencies
+      description: | 
+        Describe, which .NET API versions the package should target and what dependencies it should have.
+        You can use [TFM identifiers](https://docs.microsoft.com/en-us/dotnet/standard/frameworks#supported-target-frameworks) to describe .NET API versions.  
+        When listing dependencies, mention their NuGet ID and the version that you want to depend on.
+        
+        Example (package should have both .NET Framework 3.5 and .NET Standard 2 support):
+        
+        * `net35`
+            * `Newtonsoft.JSON`, `13.0.0`
+        * `netstandard20`
+            * No dependencies
+    validations:
+      required: true
+  - type: textarea
+    id: package-info
+    attributes:
+      label: Allowed assembly names
+      description: | 
+        List **all** assembly names that you will want to upload with the package.  
+        Include only assemblies specific to the game that you can't download from NuGet.
+        
+        If some of the assemblies is available as a NuGet package, include it as dependency in the above list.
+        
+        Example:
+        
+        * Assembly-CSharp
+        * Assembly-CSharp-firstpass
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: Contact details
+      description: |
+        What address (email, Discord, elsewhere) do you want to receive your upload key to?
+        
+        If not specified, make sure your GitHub profile has a public email address.
+      placeholder: ex. email@example.com
+    validations:
+      required: false
+  - type: textarea
+    id: extra-info
+    attributes:
+      label: Additional information
+      description: Mention any additional information here (e.g. explanations for the changes or package ownership changes).
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Package ownership agreement
+      description: | 
+        By submitting this request, you agree that
+        
+        * you actively mod the game,
+        * you will upload only original game assemblies (assemblies have not been modified in any way),
+        * you will maintain the package to the best of your ability,
+        * you may share the upload key only with your game community,
+        * if you don't maintain the package, your key may be revoked to another maintainer who fills out the request.
+      options:
+        - label: I acknowledge and agree to the above rules
+          required: true
