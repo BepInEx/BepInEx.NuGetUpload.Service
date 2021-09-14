@@ -2,6 +2,7 @@
 @using Microsoft.Extensions.Logging
 @using Microsoft.Extensions.Options
 @using System.Globalization
+@using NuGet.Versioning
 @inject PackageUploadService packageUpload;
 @inject GamePackageInfoService packageInfo;
 @inject ILogger<Index> logger;
@@ -28,6 +29,15 @@
             <div class="form-text">
                 The key is used to correctly identify the game and the package.
                 Do not share it with anyone else!
+            </div>
+        </div>
+        <div class="mb-3">
+            <label for="versionInput" class="form-label">Game version</label>
+            <input type="text" class="form-control @(VersionInvalid ? "is-invalid" : "")" id="versionInput" @bind="gameVersion" placeholder="X.Y.Z.W"/>
+            <div class="form-text">
+                Allowed format: <code>X.Y.Z.W</code>. Only numbers allowed.
+                Try to match game's version as close as possible.
+                If game has no versioning, pick a consistent versioning scheme (e.g. <code>year.month.day</code>).
             </div>
         </div>
         <div class="mb-3">
@@ -76,6 +86,7 @@
 
 @code {
     string key = string.Empty;
+    string gameVersion = string.Empty;
     readonly List<IBrowserFile> assemblies = new();
     readonly List<string> fileNameErrors = new();
     bool uploading;
@@ -85,9 +96,11 @@
     bool progressError;
     bool keyError;
 
+    bool VersionInvalid => gameVersion.Length > 0 && !Version.TryParse(gameVersion, out _);
+    
     bool KeyInvalid => keyError || key.Length > 0 && key.Length != GamePackageInfoService.KEY_LENGTH;
     
-    bool CanUpload => key.Length == GamePackageInfoService.KEY_LENGTH && assemblies.Count > 0;
+    bool CanUpload => key.Length == GamePackageInfoService.KEY_LENGTH && assemblies.Count > 0 && Version.TryParse(gameVersion, out _);
 
     private async Task UploadPackage()
     {
@@ -103,7 +116,7 @@
         uploadedPackageUrl = null;
         try
         {
-            await foreach (var (p, s) in packageUpload.UploadPackage(info, assemblies))
+            await foreach (var (p, s) in packageUpload.UploadPackage(info, assemblies, gameVersion))
             {
                 percent = p;
                 status = s;

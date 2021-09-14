@@ -61,7 +61,7 @@ namespace NuGetUpload.Services
             }
         }
         
-        public async IAsyncEnumerable<(double, string)> UploadPackage(GamePackageInfo info, IList<IBrowserFile> files)
+        public async IAsyncEnumerable<(double, string)> UploadPackage(GamePackageInfo info, IList<IBrowserFile> files, string version)
         {
             var totalSteps = files.Count + // Upload 
                              files.Count + // String
@@ -113,20 +113,19 @@ namespace NuGetUpload.Services
                     
             yield return Step("Querying existing package metadata");
 
-            var now = DateTime.Now;
-            var packageVersion = new NuGetVersion(now.Year, now.Month, now.Day);
-
+            var gameVersion = Version.Parse(version);
+            var packageVersion = new NuGetVersion(gameVersion, "r.0");
+            
             var cache = new SourceCacheContext { NoCache = true };
             var repo = Repository.Factory.GetCoreV3(nuget.SourceUrl);
             var resource = await repo.GetResourceAsync<FindPackageByIdResource>();
 
             var versions =
                 await resource.GetAllVersionsAsync(info.PackageId, cache, NullLogger.Instance, CancellationToken.None);
-            var highest = versions.Max();
+            var highest = versions.Where(v => v.Version == packageVersion.Version).Max();
 
-            if (highest is not null &&
-                (highest.Major, highest.Minor, highest.Patch) == (packageVersion.Major, packageVersion.Minor, packageVersion.Patch))
-                packageVersion = new NuGetVersion(highest.Major, highest.Minor, highest.Patch, highest.Revision + 1);
+            if (highest is not null)
+                packageVersion = new NuGetVersion(gameVersion, $"r.{int.Parse(highest.ReleaseLabels.ToArray()[1]) + 1}");
 
             yield return Step("Generating package");
 
