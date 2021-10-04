@@ -14,8 +14,9 @@ namespace NuGetUpload.Utils
 {
     public static class AssemblyStripper
     {
-        private static readonly ConstructorInfo AttributeCtor = typeof(Attribute).GetConstructor(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
-        
+        private static readonly ConstructorInfo AttributeCtor = typeof(Attribute).GetConstructor(
+            BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+
         public static void StripAssembly(string path, ISet<string> allowedNames = null)
         {
             using var module = ModuleDefMD.Load(File.ReadAllBytes(path));
@@ -24,7 +25,7 @@ namespace NuGetUpload.Utils
             allowedNames?.Remove(module.Assembly.Name);
 
             var (pubType, pubCtor) = CreatePublicizedAttribute(module);
-            
+
             foreach (var typeDef in module.GetTypes())
             {
                 if (typeDef == pubType)
@@ -39,11 +40,14 @@ namespace NuGetUpload.Utils
 
         private static (TypeDef, MethodDef) CreatePublicizedAttribute(ModuleDef module)
         {
-            TypeDef td = new TypeDefUser("System.Runtime.CompilerServices", "PublicizedAttribute", module.Import(typeof(Attribute)));
+            TypeDef td = new TypeDefUser("System.Runtime.CompilerServices", "PublicizedAttribute",
+                module.Import(typeof(Attribute)));
             td.Attributes |= TypeAttributes.Public | TypeAttributes.Sealed;
-            MethodDef ctor = new MethodDefUser(".ctor", MethodSig.CreateInstance(module.CorLibTypes.Void),
+            MethodDef ctor = new MethodDefUser(".ctor",
+                MethodSig.CreateInstance(module.CorLibTypes.Void, module.CorLibTypes.Int32),
                 MethodImplAttributes.IL | MethodImplAttributes.Managed,
-                MethodAttributes.HideBySig | MethodAttributes.SpecialName | MethodAttributes.RTSpecialName | MethodAttributes.Public);
+                MethodAttributes.HideBySig | MethodAttributes.SpecialName | MethodAttributes.RTSpecialName |
+                MethodAttributes.Public);
             td.Methods.Add(ctor);
             ctor.Body = new CilBody();
             ctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
@@ -53,11 +57,58 @@ namespace NuGetUpload.Utils
             return (td, ctor);
         }
 
+        private static int GetAccessType(FieldDef fd)
+        {
+            return fd.Access switch
+            {
+                FieldAttributes.Public       => 0,
+                FieldAttributes.Private      => 1,
+                FieldAttributes.PrivateScope => 1,
+                FieldAttributes.Family       => 2,
+                FieldAttributes.Assembly     => 3,
+                FieldAttributes.FamORAssem   => 4,
+                FieldAttributes.FamANDAssem  => 5,
+                _                            => throw new NotImplementedException($"Unrecognized access type: {fd}")
+            };
+        }
+
+        private static int GetAccessType(MethodDef md)
+        {
+            return md.Access switch
+            {
+                MethodAttributes.Public       => 0,
+                MethodAttributes.Private      => 1,
+                MethodAttributes.PrivateScope => 1,
+                MethodAttributes.Family       => 2,
+                MethodAttributes.Assembly     => 3,
+                MethodAttributes.FamORAssem   => 4,
+                MethodAttributes.FamANDAssem  => 5,
+                _                             => throw new NotImplementedException($"Unrecognized access type: {md}")
+            };
+        }
+
+        private static int GetAccessType(TypeDef td)
+        {
+            return (td.Attributes & TypeAttributes.VisibilityMask) switch
+            {
+                TypeAttributes.Public            => 0,
+                TypeAttributes.NotPublic         => 1,
+                TypeAttributes.NestedPublic      => 0,
+                TypeAttributes.NestedPrivate     => 1,
+                TypeAttributes.NestedFamily      => 2,
+                TypeAttributes.NestedAssembly    => 3,
+                TypeAttributes.NestedFamORAssem  => 4,
+                TypeAttributes.NestedFamANDAssem => 5,
+                _                                => throw new NotImplementedException($"Unrecognized access type: {td}")
+            };
+        }
+
         private static void Publicize(TypeDef td, ICustomAttributeType pubAttribute)
         {
-            if (!td.IsPublic || (td.IsNested && !td.IsNestedPublic))
-                td.CustomAttributes.Add(new CustomAttribute(pubAttribute));
-            
+            if (!td.IsNested && !td.IsPublic || td.IsNested && !td.IsNestedPublic)
+                td.CustomAttributes.Add(new CustomAttribute(pubAttribute,
+                    new[] { new CAArgument(td.Module.CorLibTypes.Int32, GetAccessType(td)) }));
+
             td.Attributes &= ~TypeAttributes.VisibilityMask;
             if (td.IsNested)
                 td.Attributes |= TypeAttributes.NestedPublic;
@@ -68,9 +119,10 @@ namespace NuGetUpload.Utils
             {
                 if (methodDef.IsCompilerControlled)
                     continue;
-                
+
                 if (!methodDef.IsPublic)
-                    methodDef.CustomAttributes.Add(new CustomAttribute(pubAttribute));
+                    methodDef.CustomAttributes.Add(new CustomAttribute(pubAttribute,
+                        new[] { new CAArgument(td.Module.CorLibTypes.Int32, GetAccessType(methodDef)) }));
 
                 methodDef.Attributes &= ~MethodAttributes.MemberAccessMask;
                 methodDef.Attributes |= MethodAttributes.Public;
@@ -85,9 +137,10 @@ namespace NuGetUpload.Utils
                 // Skip event backing fields
                 if (eventNames.Contains(fieldDef.Name))
                     continue;
-                
+
                 if (!fieldDef.IsPublic)
-                    fieldDef.CustomAttributes.Add(new CustomAttribute(pubAttribute));
+                    fieldDef.CustomAttributes.Add(new CustomAttribute(pubAttribute,
+                        new[] { new CAArgument(td.Module.CorLibTypes.Int32, GetAccessType(fieldDef)) }));
 
                 fieldDef.Attributes &= ~FieldAttributes.FieldAccessMask;
                 fieldDef.Attributes |= FieldAttributes.Public;
