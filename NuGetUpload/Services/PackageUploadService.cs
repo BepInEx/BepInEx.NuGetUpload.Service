@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -26,6 +27,13 @@ namespace NuGetUpload.Services
         private readonly NugetOptions nuget;
         private readonly PathsOptions paths;
         private readonly Regex validNamePattern = new(@"^[A-Za-z0-9.\-_]+$");
+
+        private readonly HashSet<string> zipContentTypes = new()
+        {
+            "application/zip",
+            "application/x-zip-compressed",
+            "multipart/x-zip"
+        };
 
         public PackageUploadService(ILogger<PackageUploadService> logger,
                                     IWebHostEnvironment env,
@@ -60,8 +68,24 @@ namespace NuGetUpload.Services
                 yield return read;
             }
         }
-        
-        public async IAsyncEnumerable<(double, string)> UploadPackage(GamePackageInfo info, IList<IBrowserFile> files, string version)
+
+        private async IAsyncEnumerable<string> ExtractZip(string zipFilePath, string basePath, List<string> uploads)
+        {
+            using var zipFile = ZipFile.OpenRead(zipFilePath);
+            foreach (var zipArchiveEntry in zipFile.Entries)
+            {
+                yield return $"Extracting {zipArchiveEntry.Name}";
+                var filePath = Path.Combine(basePath, zipArchiveEntry.Name);
+                await using var entryStream = zipArchiveEntry.Open();
+                await using var fs = new FileStream(filePath, FileMode.Create);
+                await entryStream.CopyToAsync(fs);
+                uploads.Add(filePath);
+            }
+        }
+
+        public async IAsyncEnumerable<(double, string)> UploadPackage(GamePackageInfo info,
+                                                                      IList<IBrowserFile> files,
+                                                                      string version)
         {
             var totalSteps = files.Count + // Upload 
                              files.Count + // String
@@ -90,10 +114,21 @@ namespace NuGetUpload.Services
                 var totalSize = (double)browserFile.Size;
                 await foreach (var read in Upload(browserFile, filePath))
                     yield return Step(uploadMsg, read / totalSize * stepSize);
-                uploads.Add(filePath);
+
+                if (zipContentTypes.Contains(browserFile.ContentType))
+                {
+                    yield return Step($"Extracting ZIP {browserFile.Name}", 0);
+                    await foreach (var s in ExtractZip(filePath, randomFolder.Path, uploads))
+                        Step(s, 0);
+                }
+                else
+                {
+                    uploads.Add(filePath);
+                }
             }
 
-            var allowedAssemblies = new HashSet<string>(info.AllowedAssemblies, StringComparer.InvariantCultureIgnoreCase);
+            var allowedAssemblies =
+                new HashSet<string>(info.AllowedAssemblies, StringComparer.InvariantCultureIgnoreCase);
             foreach (var filePath in uploads)
             {
                 var fileName = Path.GetFileName(filePath);
@@ -109,13 +144,14 @@ namespace NuGetUpload.Services
             }
 
             if (allowedAssemblies.Count > 0)
-                throw new Exception($"The following assemblies are missing: {string.Join(", " ,allowedAssemblies)}. Please include all assemblies.");
-                    
+                throw new Exception(
+                    $"The following assemblies are missing: {string.Join(", ", allowedAssemblies)}. Please include all assemblies.");
+
             yield return Step("Querying existing package metadata");
 
             var gameVersion = Version.Parse(version);
             var packageVersion = new NuGetVersion(gameVersion, "r.0");
-            
+
             var cache = new SourceCacheContext { NoCache = true };
             var repo = Repository.Factory.GetCoreV3(nuget.SourceUrl);
             var resource = await repo.GetResourceAsync<FindPackageByIdResource>();
@@ -125,7 +161,8 @@ namespace NuGetUpload.Services
             var highest = versions.Where(v => v.Version == packageVersion.Version).Max();
 
             if (highest is not null)
-                packageVersion = new NuGetVersion(gameVersion, $"r.{int.Parse(highest.ReleaseLabels.ToArray()[1]) + 1}");
+                packageVersion =
+                    new NuGetVersion(gameVersion, $"r.{int.Parse(highest.ReleaseLabels.ToArray()[1]) + 1}");
 
             yield return Step("Generating package");
 
@@ -158,7 +195,7 @@ namespace NuGetUpload.Services
             var updateResource = await repo.GetResourceAsync<PackageUpdateResource>();
 
             yield return Step("Pushing package");
-            
+
             await updateResource.Push(new[] { packagePath }.ToList(),
                 null,
                 2 * 60,
