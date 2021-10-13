@@ -43,7 +43,7 @@
         <div class="mb-3">
             <label for="uploadFiles" class="form-label">Assemblies to package</label>
             <InputFile id="uploadFiles" class="form-control" OnChange="@HandleFiles" multiple/>
-            <div class="form-text">Max @packageUpload.Options.MaxFiles .dll files. Max size of each file: @(Math.Round(packageUpload.Options.MaxFileSizeMB, 2)) MB.</div>
+            <div class="form-text">Max @packageUpload.Options.MaxFiles .dll or .zip files. Max size of each file: @(Math.Round(packageUpload.Options.MaxFileSizeMB, 2)) MB.</div>
         </div>
         @if (fileNameErrors.Count > 0)
         {
