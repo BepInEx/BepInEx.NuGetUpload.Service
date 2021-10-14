@@ -17,13 +17,8 @@ namespace NuGetUpload.Utils
         private static readonly ConstructorInfo AttributeCtor = typeof(Attribute).GetConstructor(
             BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
 
-        public static void StripAssembly(string path, ISet<string> allowedNames = null)
+        public static void StripAssembly(ModuleDefMD module)
         {
-            using var module = ModuleDefMD.Load(File.ReadAllBytes(path));
-            if (allowedNames != null && !allowedNames.Contains(module.Assembly.Name))
-                throw new ArgumentException($"Assembly {module.Assembly.Name} is not allowed list");
-            allowedNames?.Remove(module.Assembly.Name);
-
             var (pubType, pubCtor) = CreatePublicizedAttribute(module);
 
             foreach (var typeDef in module.GetTypes())
@@ -34,8 +29,6 @@ namespace NuGetUpload.Utils
                 Strip(typeDef);
                 Publicize(typeDef, pubCtor);
             }
-
-            module.Write(path);
         }
 
         private static (TypeDef, MethodDef) CreatePublicizedAttribute(ModuleDef module)

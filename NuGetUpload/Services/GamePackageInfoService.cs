@@ -13,7 +13,7 @@ namespace NuGetUpload.Services
         private readonly ILogger<GamePackageInfoService> logger;
         private readonly PathsOptions pathsOptions;
         private Dictionary<string, GamePackageInfo> gamePackages = new();
-        
+
         public GamePackageInfoService(ILogger<GamePackageInfoService> logger, IOptions<PathsOptions> pathsOptions)
         {
             this.logger = logger;
@@ -37,7 +37,7 @@ namespace NuGetUpload.Services
                 logger.LogWarning("Skipped reading keymap.json, fix or create the file");
                 return;
             }
-	            
+
             foreach (var (key, infoFile) in keyMap)
             {
                 var (ok, info) = ReadOrCreate<GamePackageInfo>($"{infoFile}.json");
@@ -72,5 +72,7 @@ namespace NuGetUpload.Services
         public string[] Authors { get; set; }
         public IDictionary<string, IDictionary<string, string>> FrameworkTargets { get; set; }
         public string[] AllowedAssemblies { get; set; }
+        public bool SkipStripping { get; set; }
+        public bool SkipDuplicateMitigation { get; set; }
     }
 }
