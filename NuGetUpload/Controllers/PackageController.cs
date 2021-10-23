@@ -32,6 +32,7 @@ namespace NuGetUpload.Controllers
         public async Task<ActionResult<GamePackageInfo>> UploadAsync(
             [FromForm] [Required] [MaxLength(64)] [MinLength(64)] string key,
             [FromForm] [Required] string version,
+            [FromForm] string unityVersion,
             [FromForm(Name = "inputFile")] [Required] IFormFile[] files
         )
         {
@@ -65,7 +66,12 @@ namespace NuGetUpload.Controllers
                 return Unauthorized("Invalid key");
             }
 
-            var packageInfo = await _packageUploadService.UploadPackage(info, files.Select(file => new InputFormFile(file)).Cast<IInputFile>().ToList(), parsedVersion, new Progress<(double Progress, string Status)>(x =>
+            if (info.IsIl2Cpp && (unityVersion == null || !Version.TryParse(unityVersion, out _)))
+            {
+                return BadRequest("Bad unityVersion");
+            }
+
+            var packageInfo = await _packageUploadService.UploadPackage(info, files.Select(file => new InputFormFile(file)).Cast<IInputFile>().ToList(), parsedVersion, unityVersion, new Progress<(double Progress, string Status)>(x =>
             {
                 _logger.LogDebug("Upload status: {Status}", x.Status);
             }));

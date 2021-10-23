@@ -84,7 +84,7 @@ namespace NuGetUpload.Services
 
         public record PackageInfo(string Id, string Version);
 
-        public async Task<PackageInfo> UploadPackage(GamePackageInfo info, IList<IInputFile> files, NuGetVersion version, IProgress<(double, string)> progress = null)
+        public async Task<PackageInfo> UploadPackage(GamePackageInfo info, IList<IInputFile> files, NuGetVersion version, string unityVersion, IProgress<(double, string)> progress = null)
         {
             var totalSteps =
                 files.Count + // Upload 
@@ -200,11 +200,41 @@ namespace NuGetUpload.Services
             };
 
             var builder = new PackageBuilder();
-            builder.PopulateFiles(temporaryFolder.Path, info.FrameworkTargets.Select(kv => new ManifestFile
+
+            if (info.IsIl2Cpp)
             {
-                Source = "*.dll",
-                Target = $"lib/{kv.Key}"
-            }));
+                var propsPath = Path.Combine(temporaryFolder.Path, info.PackageId + ".props");
+                await File.WriteAllTextAsync(propsPath, $@"
+<Project>
+    <ItemGroup>
+        <Unhollow Include=""{info.PackageId}"" Version=""{version}"" DummyDirectory=""$(MSBuildThisFileDirectory)"" UnityVersion=""{unityVersion}"" />
+    </ItemGroup>
+</Project>
+");
+
+                builder.PopulateFiles(temporaryFolder.Path, new[]
+                {
+                    new ManifestFile
+                    {
+                        Source = "*.dll",
+                        Target = "build"
+                    },
+                    new ManifestFile
+                    {
+                        Source = Path.GetFileName(propsPath),
+                        Target = "build"
+                    }
+                });
+            }
+            else
+            {
+                builder.PopulateFiles(temporaryFolder.Path, info.FrameworkTargets.Select(kv => new ManifestFile
+                {
+                    Source = "*.dll",
+                    Target = $"lib/{kv.Key}"
+                }));
+            }
+
             builder.Populate(meta);
 
             var packagePath = Path.Combine(temporaryFolder.Path, "package.nupkg");

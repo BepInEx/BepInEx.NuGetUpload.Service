@@ -41,6 +41,13 @@
             </div>
         </div>
         <div class="mb-3">
+            <label for="versionInput" class="form-label">Unity version</label>
+            <input type="text" class="form-control @(UnityVersionInvalid ? "is-invalid" : "")" disabled="@(!IsIl2Cpp)" id="unityVersionInput" @bind="UnityVersion" placeholder="X.Y.Z"/>
+            <div class="form-text">
+                Required only for IL2CPP games. Allowed format: <code>X.Y.Z</code>. Only numbers allowed.
+            </div>
+        </div>
+        <div class="mb-3">
             <label for="uploadFiles" class="form-label">Assemblies to package</label>
             <InputFile id="uploadFiles" class="form-control" OnChange="@HandleFiles" multiple/>
             <div class="form-text">Max @_packageUploadService.Options.MaxFiles .dll or .zip files. Max size of each file: @(Math.Round(_packageUploadService.Options.MaxFileSizeMB, 2)) MB.</div>
@@ -86,8 +93,25 @@
 
 @code {
 
-    private string Key { get; set; } = string.Empty;
+    private GamePackageInfo Info { get; set; }
+
+    private string _key = string.Empty;
+
+    private string Key
+    {
+        get => _key;
+        set
+        {
+            _key = value;
+
+            Info = _gamePackageInfoService.GetPackage(value);
+            KeyError = Info is null;
+            IsIl2Cpp = Info is { IsIl2Cpp: true };
+        }
+    }
+
     private string GameVersion { get; set; } = string.Empty;
+    private string UnityVersion { get; set; } = string.Empty;
     private List<IBrowserFile> Assemblies { get; } = new();
     private List<string> FileErrors { get; } = new();
     private bool Uploading { get; set; }
@@ -97,7 +121,11 @@
     private bool ProgressError { get; set; }
     private bool KeyError { get; set; }
 
+    private bool IsIl2Cpp { get; set; }
+
     private bool VersionInvalid => GameVersion.Length > 0 && !NuGetVersion.TryParse(GameVersion, out _);
+
+    private bool UnityVersionInvalid => UnityVersion.Length > 0 && !Version.TryParse(UnityVersion, out _);
 
     private bool KeyInvalid => KeyError || Key.Length > 0 && Key.Length != GamePackageInfoService.KEY_LENGTH;
 
@@ -105,8 +133,6 @@
 
     private async Task UploadPackage()
     {
-        var info = _gamePackageInfoService.GetPackage(Key);
-        KeyError = info is null;
         if (KeyError)
             return;
 
@@ -117,7 +143,7 @@
         UploadedPackageUrl = null;
         try
         {
-            await _packageUploadService.UploadPackage(info, Assemblies.Select(file => new InputBrowserFile(file)).Cast<IInputFile>().ToList(), NuGetVersion.Parse(GameVersion), new Progress<(double, string)>(x =>
+            await _packageUploadService.UploadPackage(Info, Assemblies.Select(file => new InputBrowserFile(file)).Cast<IInputFile>().ToList(), NuGetVersion.Parse(GameVersion), UnityVersion, new Progress<(double, string)>(x =>
             {
                 var (p, s) = x;
                 Percent = p;
@@ -133,7 +159,7 @@
             return;
         }
         Uploading = false;
-        UploadedPackageUrl = $"{_nugetOptions.Value.PublicHost}/packages/{info!.PackageId}";
+        UploadedPackageUrl = $"{_nugetOptions.Value.PublicHost}/packages/{Info!.PackageId}";
     }
 
     private void HandleFiles(InputFileChangeEventArgs e)

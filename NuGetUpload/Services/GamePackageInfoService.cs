@@ -74,5 +74,6 @@ namespace NuGetUpload.Services
         public string[] AllowedAssemblies { get; set; }
         public bool SkipStripping { get; set; }
         public bool SkipDuplicateMitigation { get; set; }
+        public bool IsIl2Cpp { get; set; }
     }
 }
