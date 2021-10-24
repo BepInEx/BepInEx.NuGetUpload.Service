@@ -5,8 +5,10 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
+using dnlib.DotNet;
 using Microsoft.AspNetCore.Components.Forms;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NuGet.Common;
@@ -22,29 +24,27 @@ namespace NuGetUpload.Services
 {
     public class PackageUploadService
     {
-        private readonly IWebHostEnvironment env;
-        private readonly ILogger<PackageUploadService> logger;
-        private readonly NugetOptions nuget;
-        private readonly PathsOptions paths;
-        private readonly Regex validNamePattern = new(@"^[A-Za-z0-9.\-_]+$");
+        private static readonly Regex _validNamePattern = new(@"^[A-Za-z0-9.\-_]+$", RegexOptions.Compiled);
 
-        private readonly HashSet<string> zipContentTypes = new()
+        private static readonly HashSet<string> _zipContentTypes = new()
         {
             "application/zip",
             "application/x-zip-compressed",
             "multipart/x-zip"
         };
 
+        private readonly ILogger<PackageUploadService> _logger;
+        private readonly NugetOptions _nugetOptions;
+        private readonly PathsOptions _pathsOptions;
+
         public PackageUploadService(ILogger<PackageUploadService> logger,
-                                    IWebHostEnvironment env,
-                                    IOptions<UploadOptions> options,
-                                    IOptions<PathsOptions> paths,
-                                    IOptions<NugetOptions> nuget)
+            IOptions<UploadOptions> options,
+            IOptions<PathsOptions> paths,
+            IOptions<NugetOptions> nuget)
         {
-            this.logger = logger;
-            this.env = env;
-            this.paths = paths.Value;
-            this.nuget = nuget.Value;
+            _logger = logger;
+            _pathsOptions = paths.Value;
+            _nugetOptions = nuget.Value;
             Options = options.Value;
         }
 
@@ -53,13 +53,12 @@ namespace NuGetUpload.Services
 
         public bool IsValidName(string s)
         {
-            return validNamePattern.IsMatch(s);
+            return _validNamePattern.IsMatch(s);
         }
 
-        private async IAsyncEnumerable<int> Upload(IBrowserFile file, string filePath)
+        private static async IAsyncEnumerable<int> SaveToFile(Stream s, string filePath)
         {
             await using var fs = new FileStream(filePath, FileMode.Create);
-            await using var s = file.OpenReadStream(MaxFileSize);
             var buffer = new byte[81920];
             int read;
             while ((read = await s.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
@@ -69,7 +68,7 @@ namespace NuGetUpload.Services
             }
         }
 
-        private async IAsyncEnumerable<string> ExtractZip(string zipFilePath, string basePath, List<string> uploads)
+        private static async IAsyncEnumerable<string> ExtractZip(string zipFilePath, string basePath, List<string> uploads)
         {
             using var zipFile = ZipFile.OpenRead(zipFilePath);
             foreach (var zipArchiveEntry in zipFile.Entries)
@@ -83,59 +82,70 @@ namespace NuGetUpload.Services
             }
         }
 
-        public async IAsyncEnumerable<(double, string)> UploadPackage(GamePackageInfo info,
-                                                                      IList<IBrowserFile> files,
-                                                                      string version)
-        {
-            var totalSteps = files.Count + // Upload 
-                             files.Count + // String
-                             1 +           // Metadata fetch
-                             1 +           // Package create
-                             1;            // Package push
+        public record PackageInfo(string Id, string Version);
 
+        public async Task<PackageInfo> UploadPackage(GamePackageInfo info, IList<IInputFile> files, NuGetVersion version, string unityVersion, IProgress<(double, string)> progress = null)
+        {
+            var totalSteps =
+                files.Count + // Upload 
+                (info.SkipStripping ? 0 : files.Count) + // Strip
+                1 + // Metadata fetch
+                1 + // Package create
+                1; // Package push
 
             var stepSize = 100.0 / totalSteps;
-            var progress = 0.0;
+            var progressValue = 0.0;
 
-            (double, string) Step(string msg, double size = -1)
+            void Step(string msg, double? size = null)
             {
-                progress += size >= 0 ? size : stepSize;
-                return (progress, msg);
+                progressValue += size ?? stepSize;
+                progress?.Report((progressValue, msg));
             }
 
-            using var randomFolder = new TemporaryFolder(paths.TempUploads);
-            logger.LogInformation("Upload path: {}", randomFolder.Path);
-            var uploads = new List<string>();
-            foreach (var browserFile in files)
-            {
-                var uploadMsg = $"Uploading {browserFile.Name}";
-                yield return Step(uploadMsg, 0);
-                var filePath = Path.Combine(randomFolder.Path, browserFile.Name);
-                var totalSize = (double)browserFile.Size;
-                await foreach (var read in Upload(browserFile, filePath))
-                    yield return Step(uploadMsg, read / totalSize * stepSize);
+            using var temporaryFolder = new TemporaryFolder(_pathsOptions.TempUploads);
+            _logger.LogDebug("Upload path: {Path}", temporaryFolder.Path);
 
-                if (zipContentTypes.Contains(browserFile.ContentType))
+            var filePaths = new List<string>();
+            foreach (var file in files)
+            {
+                var uploadMessage = $"Uploading {file.Name}";
+                Step(uploadMessage, 0);
+
+                var filePath = Path.Combine(temporaryFolder.Path, file.Name);
+                var totalSize = (double)file.Size;
+                await using var stream = file.OpenReadStream(MaxFileSize);
+                await foreach (var read in SaveToFile(stream, filePath))
+                    Step(uploadMessage, read / totalSize * stepSize);
+
+                if (_zipContentTypes.Contains(file.ContentType))
                 {
-                    yield return Step($"Extracting ZIP {browserFile.Name}", 0);
-                    await foreach (var s in ExtractZip(filePath, randomFolder.Path, uploads))
+                    Step($"Extracting ZIP {file.Name}", 0);
+                    await foreach (var s in ExtractZip(filePath, temporaryFolder.Path, filePaths))
                         Step(s, 0);
                 }
                 else
                 {
-                    uploads.Add(filePath);
+                    filePaths.Add(filePath);
                 }
             }
 
-            var allowedAssemblies =
-                new HashSet<string>(info.AllowedAssemblies, StringComparer.InvariantCultureIgnoreCase);
-            foreach (var filePath in uploads)
+            var allowedAssemblies = info.AllowedAssemblies == null ? null : new HashSet<string>(info.AllowedAssemblies, StringComparer.InvariantCultureIgnoreCase);
+
+            foreach (var filePath in filePaths)
             {
                 var fileName = Path.GetFileName(filePath);
-                yield return Step($"Stripping and publicising {fileName}");
                 try
                 {
-                    AssemblyStripper.StripAssembly(filePath, allowedAssemblies);
+                    using var module = ModuleDefMD.Load(await File.ReadAllBytesAsync(filePath));
+                    if (allowedAssemblies != null && !allowedAssemblies.Remove(module.Assembly.Name))
+                        throw new ArgumentException($"Assembly {module.Assembly.Name} is not in allowed list");
+
+                    if (!info.SkipStripping)
+                    {
+                        Step($"Stripping and publicising {fileName}");
+                        AssemblyStripper.StripAssembly(module);
+                        module.Write(filePath);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -143,34 +153,45 @@ namespace NuGetUpload.Services
                 }
             }
 
-            if (allowedAssemblies.Count > 0)
+            if (allowedAssemblies != null && allowedAssemblies.Count > 0)
                 throw new Exception(
                     $"The following assemblies are missing: {string.Join(", ", allowedAssemblies)}. Please include all assemblies.");
 
-            yield return Step("Querying existing package metadata");
-
-            var gameVersion = Version.Parse(version);
-            var packageVersion = new NuGetVersion(gameVersion, "r.0");
+            Step("Querying existing package metadata");
 
             var cache = new SourceCacheContext { NoCache = true };
-            var repo = Repository.Factory.GetCoreV3(nuget.SourceUrl);
+            var repo = Repository.Factory.GetCoreV3(_nugetOptions.SourceUrl);
             var resource = await repo.GetResourceAsync<FindPackageByIdResource>();
 
             var versions =
                 await resource.GetAllVersionsAsync(info.PackageId, cache, NullLogger.Instance, CancellationToken.None);
-            var highest = versions.Where(v => v.Version == packageVersion.Version).Max();
 
-            if (highest is not null)
-                packageVersion =
-                    new NuGetVersion(gameVersion, $"r.{int.Parse(highest.ReleaseLabels.ToArray()[1]) + 1}");
+            if (!info.SkipDuplicateMitigation)
+            {
+                var number = 0;
 
-            yield return Step("Generating package");
+                var highest = versions.Where(v => v.Version == version.Version).Max();
+                if (highest != null)
+                {
+                    var releaseLabels = highest.ReleaseLabels.ToList();
+                    var index = releaseLabels.LastIndexOf("r");
+
+                    if (index != -1)
+                    {
+                        number = int.Parse(releaseLabels[index + 1]) + 1;
+                    }
+                }
+
+                version = new NuGetVersion(version.Version, version.ReleaseLabels.Append("r").Append(number.ToString()), version.Metadata, version.OriginalVersion);
+            }
+
+            Step("Generating package");
 
             var meta = new ManifestMetadata
             {
                 Id = info.PackageId,
                 Authors = info.Authors,
-                Version = packageVersion,
+                Version = version,
                 Description = info.Description,
                 DependencyGroups = info.FrameworkTargets.Select(kv =>
                     new PackageDependencyGroup(
@@ -179,14 +200,44 @@ namespace NuGetUpload.Services
             };
 
             var builder = new PackageBuilder();
-            builder.PopulateFiles(randomFolder.Path, info.FrameworkTargets.Select(kv => new ManifestFile
+
+            if (info.IsIl2Cpp)
             {
-                Source = "*.dll",
-                Target = $"lib/{kv.Key}"
-            }));
+                var propsPath = Path.Combine(temporaryFolder.Path, info.PackageId + ".props");
+                await File.WriteAllTextAsync(propsPath, $@"
+<Project>
+    <ItemGroup>
+        <Unhollow Include=""{info.PackageId}"" Version=""{version}"" DummyDirectory=""$(MSBuildThisFileDirectory)"" UnityVersion=""{unityVersion}"" />
+    </ItemGroup>
+</Project>
+");
+
+                builder.PopulateFiles(temporaryFolder.Path, new[]
+                {
+                    new ManifestFile
+                    {
+                        Source = "*.dll",
+                        Target = "build"
+                    },
+                    new ManifestFile
+                    {
+                        Source = Path.GetFileName(propsPath),
+                        Target = "build"
+                    }
+                });
+            }
+            else
+            {
+                builder.PopulateFiles(temporaryFolder.Path, info.FrameworkTargets.Select(kv => new ManifestFile
+                {
+                    Source = "*.dll",
+                    Target = $"lib/{kv.Key}"
+                }));
+            }
+
             builder.Populate(meta);
 
-            var packagePath = Path.Combine(randomFolder.Path, "package.nupkg");
+            var packagePath = Path.Combine(temporaryFolder.Path, "package.nupkg");
             await using (var packageFs = File.Create(packagePath))
             {
                 builder.Save(packageFs);
@@ -194,20 +245,75 @@ namespace NuGetUpload.Services
 
             var updateResource = await repo.GetResourceAsync<PackageUpdateResource>();
 
-            yield return Step("Pushing package");
+            Step("Pushing package");
 
             await updateResource.Push(new[] { packagePath }.ToList(),
                 null,
                 2 * 60,
                 false,
-                s => nuget.ApiKey,
+                s => _nugetOptions.ApiKey,
                 s => null,
                 false,
                 false,
                 null,
                 NullLogger.Instance);
 
-            yield return Step("Cleaning up");
+            Step("Cleaning up");
+
+            return new PackageInfo(info.PackageId, version.ToFullString());
+        }
+    }
+
+    public interface IInputFile
+    {
+        string Name { get; }
+
+        long Size { get; }
+
+        string ContentType { get; }
+
+        Stream OpenReadStream(long maxAllowedSize);
+    }
+
+    public class InputBrowserFile : IInputFile
+    {
+        private readonly IBrowserFile _file;
+
+        public InputBrowserFile(IBrowserFile file)
+        {
+            _file = file;
+        }
+
+        public string Name => _file.Name;
+
+        public long Size => _file.Size;
+
+        public string ContentType => _file.ContentType;
+
+        public Stream OpenReadStream(long maxAllowedSize)
+        {
+            return _file.OpenReadStream(maxAllowedSize);
+        }
+    }
+
+    public class InputFormFile : IInputFile
+    {
+        private readonly IFormFile _file;
+
+        public InputFormFile(IFormFile file)
+        {
+            _file = file;
+        }
+
+        public string Name => _file.FileName;
+
+        public long Size => _file.Length;
+
+        public string ContentType => _file.ContentType;
+
+        public Stream OpenReadStream(long maxAllowedSize)
+        {
+            return _file.OpenReadStream();
         }
     }
 }

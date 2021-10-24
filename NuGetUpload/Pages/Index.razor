@@ -3,15 +3,15 @@
 @using Microsoft.Extensions.Options
 @using System.Globalization
 @using NuGet.Versioning
-@inject PackageUploadService packageUpload;
-@inject GamePackageInfoService packageInfo;
-@inject ILogger<Index> logger;
-@inject IOptions<NugetOptions> nugetOptions;
+@inject ILogger<Index> _logger;
+@inject IOptions<NugetOptions> _nugetOptions;
+@inject PackageUploadService _packageUploadService;
+@inject GamePackageInfoService _gamePackageInfoService;
 
 <div class="row">
     <h1>Upload game package</h1>
     <p>
-        Use the page to upload game-specific assemblies to the <a href="@nugetOptions.Value.PublicHost/">BepInEx NuGet feed</a>.
+        Use the page to upload game-specific assemblies to the <a href="@_nugetOptions.Value.PublicHost/">BepInEx NuGet feed</a>.
     </p>
 </div>
 
@@ -19,8 +19,8 @@
     <form class="col-lg-6">
         <div class="mb-3">
             <label for="keyInput" class="form-label">Upload key</label>
-            <input type="password" class="form-control @(KeyInvalid ? "is-invalid" : "")" id="keyInput" @bind="key"/>
-            @if (keyError)
+            <input type="password" class="form-control @(KeyInvalid ? "is-invalid" : "")" id="keyInput" @bind="Key"/>
+            @if (KeyError)
             {
                 <div class="invalid-feedback">
                     Invalid key. Please check it corresponds to any game and try again.
@@ -33,7 +33,7 @@
         </div>
         <div class="mb-3">
             <label for="versionInput" class="form-label">Game version</label>
-            <input type="text" class="form-control @(VersionInvalid ? "is-invalid" : "")" id="versionInput" @bind="gameVersion" placeholder="X.Y.Z.W"/>
+            <input type="text" class="form-control @(VersionInvalid ? "is-invalid" : "")" id="versionInput" @bind="GameVersion" placeholder="X.Y.Z.W"/>
             <div class="form-text">
                 Allowed format: <code>X.Y.Z.W</code>. Only numbers allowed.
                 Try to match game's version as close as possible.
@@ -41,11 +41,18 @@
             </div>
         </div>
         <div class="mb-3">
+            <label for="versionInput" class="form-label">Unity version</label>
+            <input type="text" class="form-control @(UnityVersionInvalid ? "is-invalid" : "")" disabled="@(!IsIl2Cpp)" id="unityVersionInput" @bind="UnityVersion" placeholder="X.Y.Z"/>
+            <div class="form-text">
+                Required only for IL2CPP games. Allowed format: <code>X.Y.Z</code>. Only numbers allowed.
+            </div>
+        </div>
+        <div class="mb-3">
             <label for="uploadFiles" class="form-label">Assemblies to package</label>
             <InputFile id="uploadFiles" class="form-control" OnChange="@HandleFiles" multiple/>
-            <div class="form-text">Max @packageUpload.Options.MaxFiles .dll or .zip files. Max size of each file: @(Math.Round(packageUpload.Options.MaxFileSizeMB, 2)) MB.</div>
+            <div class="form-text">Max @_packageUploadService.Options.MaxFiles .dll or .zip files. Max size of each file: @(Math.Round(_packageUploadService.Options.MaxFileSizeMB, 2)) MB.</div>
         </div>
-        @if (fileNameErrors.Count > 0)
+        @if (FileErrors.Count > 0)
         {
             <div class="mb-3">
                 <div class="alert alert-danger">
@@ -53,7 +60,7 @@
                         <strong>File upload encountered the following errors:</strong>
                     </p>
                     <ul>
-                        @foreach (var e in fileNameErrors)
+                        @foreach (var e in FileErrors)
                         {
                             <li>@e</li>
                         }
@@ -67,89 +74,116 @@
     </form>
 </div>
 
-@if (uploading)
+@if (Uploading)
 {
     <div class="row fw-light justify-content-center" style="font-size: 0.8rem;">
-        <div class="col-auto">@status</div>
+        <div class="col-auto">@Status</div>
     </div>
     <div class="progress">
-        <div class="progress-bar progress-bar-striped progress-bar-animated bg-@(progressError ? "danger" : "primary")" style="width: @Math.Round(percent, 1).ToString(CultureInfo.InvariantCulture)%"></div>
+        <div class="progress-bar progress-bar-striped progress-bar-animated bg-@(ProgressError ? "danger" : "primary")" style="width: @Math.Round(Percent, 1).ToString(CultureInfo.InvariantCulture)%"></div>
     </div>
 }
 
-@if (uploadedPackageUrl is not null)
+@if (UploadedPackageUrl is not null)
 {
     <div class="alert alert-success">
-        Upload complete! <a href="@uploadedPackageUrl">View package on NuGet.</a>
+        Upload complete! <a href="@UploadedPackageUrl">View package on NuGet.</a>
     </div>
 }
 
 @code {
-    string key = string.Empty;
-    string gameVersion = string.Empty;
-    readonly List<IBrowserFile> assemblies = new();
-    readonly List<string> fileNameErrors = new();
-    bool uploading;
-    string uploadedPackageUrl = null;
-    double percent;
-    string status = string.Empty;
-    bool progressError;
-    bool keyError;
 
-    bool VersionInvalid => gameVersion.Length > 0 && !Version.TryParse(gameVersion, out _);
-    
-    bool KeyInvalid => keyError || key.Length > 0 && key.Length != GamePackageInfoService.KEY_LENGTH;
-    
-    bool CanUpload => key.Length == GamePackageInfoService.KEY_LENGTH && assemblies.Count > 0 && Version.TryParse(gameVersion, out _);
+    private GamePackageInfo Info { get; set; }
+
+    private string _key = string.Empty;
+
+    private string Key
+    {
+        get => _key;
+        set
+        {
+            _key = value;
+
+            Info = _gamePackageInfoService.GetPackage(value);
+            KeyError = Info is null;
+            IsIl2Cpp = Info is { IsIl2Cpp: true };
+        }
+    }
+
+    private string GameVersion { get; set; } = string.Empty;
+    private string UnityVersion { get; set; } = string.Empty;
+    private List<IBrowserFile> Assemblies { get; } = new();
+    private List<string> FileErrors { get; } = new();
+    private bool Uploading { get; set; }
+    private string UploadedPackageUrl { get; set; }
+    private double Percent { get; set; }
+    private string Status { get; set; }
+    private bool ProgressError { get; set; }
+    private bool KeyError { get; set; }
+
+    private bool IsIl2Cpp { get; set; }
+
+    private bool VersionInvalid => GameVersion.Length > 0 && !NuGetVersion.TryParse(GameVersion, out _);
+
+    private bool UnityVersionInvalid => UnityVersion.Length > 0 && !Version.TryParse(UnityVersion, out _);
+
+    private bool KeyInvalid => KeyError || Key.Length > 0 && Key.Length != GamePackageInfoService.KEY_LENGTH;
+
+    private bool CanUpload => !VersionInvalid && !KeyInvalid && Assemblies.Count > 0 && FileErrors.Count <= 0;
 
     private async Task UploadPackage()
     {
-        var info = packageInfo.GetPackage(key);
-        keyError = info is null;
-        if (keyError)
+        if (KeyError)
             return;
-        
-        progressError = false;
-        uploading = true;
-        status = "Started upload...";
-        percent = 0.0;
-        uploadedPackageUrl = null;
+
+        ProgressError = false;
+        Uploading = true;
+        Status = "Started upload...";
+        Percent = 0.0;
+        UploadedPackageUrl = null;
         try
         {
-            await foreach (var (p, s) in packageUpload.UploadPackage(info, assemblies, gameVersion))
+            await _packageUploadService.UploadPackage(Info, Assemblies.Select(file => new InputBrowserFile(file)).Cast<IInputFile>().ToList(), NuGetVersion.Parse(GameVersion), UnityVersion, new Progress<(double, string)>(x =>
             {
-                percent = p;
-                status = s;
+                var (p, s) = x;
+                Percent = p;
+                Status = s;
                 StateHasChanged();
-            }
+            }));
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to upload!");
-            status = $"Got error: {e.Message}";
-            progressError = true;
+            _logger.LogError(e, "Failed to upload!");
+            Status = $"Got error: {e.Message}";
+            ProgressError = true;
             return;
         }
-        uploading = false;
-        uploadedPackageUrl = $"{nugetOptions.Value.PublicHost}/packages/{info.PackageId}";
+        Uploading = false;
+        UploadedPackageUrl = $"{_nugetOptions.Value.PublicHost}/packages/{Info!.PackageId}";
     }
 
     private void HandleFiles(InputFileChangeEventArgs e)
     {
-        fileNameErrors.Clear();
-        if (e.FileCount > packageUpload.Options.MaxFiles)
+        FileErrors.Clear();
+        if (e.FileCount > _packageUploadService.Options.MaxFiles)
         {
-            fileNameErrors.Add($"Too many files, only {packageUpload.Options.MaxFiles} can be uploaded.");
+            FileErrors.Add($"Too many files, only {_packageUploadService.Options.MaxFiles} can be uploaded.");
             return;
         }
-        assemblies.Clear();
-        foreach (var f in e.GetMultipleFiles(packageUpload.Options.MaxFiles))
+        Assemblies.Clear();
+        foreach (var f in e.GetMultipleFiles(_packageUploadService.Options.MaxFiles))
         {
-            if (f.Size > packageUpload.MaxFileSize)
-                fileNameErrors.Add($"{f.Name} is too large to be uploaded. File's size is {Math.Round(f.Size / (1024.0 * 1024.0), 2)} MB, but max size is {Math.Round(packageUpload.Options.MaxFileSizeMB, 2)} MB.");
-            if (!packageUpload.IsValidName(f.Name))
-                fileNameErrors.Add($"{f.Name} has invalid filename. Allowed characters: A-z, 0-9, ., -, _");
-            assemblies.Add(f);
+            if (f.Size > _packageUploadService.MaxFileSize)
+            {
+                FileErrors.Add($"{f.Name} is too large to be uploaded. File's size is {Math.Round(f.Size / (1024.0 * 1024.0), 2)} MB, but max size is {Math.Round(_packageUploadService.Options.MaxFileSizeMB, 2)} MB.");
+            }
+
+            if (!_packageUploadService.IsValidName(f.Name))
+            {
+                FileErrors.Add($"{f.Name} has invalid filename. Allowed characters: A-z, 0-9, ., -, _");
+            }
+
+            Assemblies.Add(f);
         }
     }
 
