@@ -138,7 +138,7 @@ namespace NuGetUpload.Services
                 {
                     using var module = ModuleDefMD.Load(await File.ReadAllBytesAsync(filePath));
                     if (allowedAssemblies != null && !allowedAssemblies.Remove(module.Assembly.Name))
-                        throw new ArgumentException($"Assembly {module.Assembly.Name} is not in allowed list");
+                        throw new PackageUploadException($"Assembly {module.Assembly.Name} is not in allowed list");
 
                     if (!info.SkipStripping)
                     {
@@ -149,12 +149,12 @@ namespace NuGetUpload.Services
                 }
                 catch (Exception e)
                 {
-                    throw new Exception($"Could not process {fileName}: {e.Message}", e);
+                    throw new PackageUploadException($"Could not process {fileName}: {e.Message}", e);
                 }
             }
 
             if (allowedAssemblies != null && allowedAssemblies.Count > 0)
-                throw new Exception(
+                throw new PackageUploadException(
                     $"The following assemblies are missing: {string.Join(", ", allowedAssemblies)}. Please include all assemblies.");
 
             Step("Querying existing package metadata");
@@ -261,6 +261,17 @@ namespace NuGetUpload.Services
             Step("Cleaning up");
 
             return new PackageInfo(info.PackageId, version.ToFullString());
+        }
+    }
+
+    public class PackageUploadException : Exception
+    {
+        public PackageUploadException(string message) : base(message)
+        {
+        }
+
+        public PackageUploadException(string message, Exception inner) : base(message, inner)
+        {
         }
     }
 

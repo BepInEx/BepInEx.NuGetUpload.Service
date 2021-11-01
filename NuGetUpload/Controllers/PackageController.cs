@@ -71,12 +71,18 @@ namespace NuGetUpload.Controllers
                 return BadRequest("Bad unityVersion");
             }
 
-            var packageInfo = await _packageUploadService.UploadPackage(info, files.Select(file => new InputFormFile(file)).Cast<IInputFile>().ToList(), parsedVersion, unityVersion, new Progress<(double Progress, string Status)>(x =>
+            try
             {
-                _logger.LogDebug("Upload status: {Status}", x.Status);
-            }));
-
-            return Ok(packageInfo);
+                var packageInfo = await _packageUploadService.UploadPackage(info, files.Select(file => new InputFormFile(file)).Cast<IInputFile>().ToList(), parsedVersion, unityVersion, new Progress<(double Progress, string Status)>(x =>
+                {
+                    _logger.LogDebug("Upload status: {Status}", x.Status);
+                }));
+                return Ok(packageInfo);
+            }
+            catch (PackageUploadException e)
+            {
+                return BadRequest(e);
+            }
         }
     }
 }
