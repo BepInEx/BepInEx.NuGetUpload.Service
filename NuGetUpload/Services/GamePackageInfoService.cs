@@ -52,7 +52,7 @@ namespace NuGetUpload.Services
             {
                 var txt = File.ReadAllText(Path.Combine(pathsOptions.PackageInfos, fileName));
                 return (true, JsonSerializer.Deserialize<T>(txt
-                    , new()
+                    , new JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true
                     }));
