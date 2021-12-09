@@ -145,6 +145,8 @@
         {
             await _packageUploadService.UploadPackage(Info, Assemblies.Select(file => new InputBrowserFile(file)).Cast<IInputFile>().ToList(), NuGetVersion.Parse(GameVersion), UnityVersion, new Progress<(double, string)>(x =>
             {
+                if (ProgressError)
+                    return;
                 var (p, s) = x;
                 Percent = p;
                 Status = s;
@@ -154,8 +156,8 @@
         catch (Exception e)
         {
             _logger.LogError(e, "Failed to upload!");
-            Status = $"Got error: {e.Message}";
             ProgressError = true;
+            Status = $"Got error: {e.Message}";
             return;
         }
         Uploading = false;
