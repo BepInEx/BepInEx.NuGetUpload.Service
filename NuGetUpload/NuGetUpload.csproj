@@ -6,34 +6,34 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="dnlib" Version="3.3.5" />
-      <PackageReference Include="NuGet.Packaging" Version="6.0.0" />
-      <PackageReference Include="NuGet.Protocol" Version="6.0.0" />
+        <PackageReference Include="dnlib" Version="3.3.5"/>
+        <PackageReference Include="NuGet.Packaging" Version="6.0.0"/>
+        <PackageReference Include="NuGet.Protocol" Version="6.0.0"/>
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Remove="package_infos\**" />
-      <Compile Remove="uploads\**" />
+        <Compile Remove="package_infos\**"/>
+        <Compile Remove="uploads\**"/>
     </ItemGroup>
 
     <ItemGroup>
-      <EmbeddedResource Remove="package_infos\**" />
-      <EmbeddedResource Remove="uploads\**" />
+        <EmbeddedResource Remove="package_infos\**"/>
+        <EmbeddedResource Remove="uploads\**"/>
     </ItemGroup>
 
     <ItemGroup>
-      <None Remove="package_infos\**" />
-      <None Remove="uploads\**" />
+        <None Remove="package_infos\**"/>
+        <None Remove="uploads\**"/>
     </ItemGroup>
 
     <ItemGroup>
-      <Content Remove="package_infos\**" />
-      <Content Remove="uploads\**" />
+        <Content Remove="package_infos\**"/>
+        <Content Remove="uploads\**"/>
     </ItemGroup>
 
     <ItemGroup>
-      <_ContentIncludedByDefault Remove="package_infos\keymap.json" />
-      <_ContentIncludedByDefault Remove="package_infos\test.json" />
+        <_ContentIncludedByDefault Remove="package_infos\keymap.json"/>
+        <_ContentIncludedByDefault Remove="package_infos\test.json"/>
     </ItemGroup>
 
 </Project>

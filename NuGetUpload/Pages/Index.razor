@@ -1,8 +1,8 @@
 @page "/"
 @using Microsoft.Extensions.Logging
 @using Microsoft.Extensions.Options
-@using System.Globalization
 @using NuGet.Versioning
+@using System.Globalization
 @inject ILogger<Index> _logger;
 @inject IOptions<NugetOptions> _nugetOptions;
 @inject PackageUploadService _packageUploadService;
