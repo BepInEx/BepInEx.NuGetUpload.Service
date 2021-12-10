@@ -129,15 +129,23 @@ namespace NuGetUpload.Services
                 }
             }
 
-            var allowedAssemblies = info.AllowedAssemblies == null ? null : new HashSet<string>(info.AllowedAssemblies, StringComparer.InvariantCultureIgnoreCase);
+            HashSet<string> allowedAssemblies = null;
+            List<Regex> assemblyWildcards = new();
 
+            if (info.AllowedAssemblies != null)
+            {
+                allowedAssemblies = new HashSet<string>(info.AllowedAssemblies.Where(a => !a.StartsWith("$")), StringComparer.InvariantCultureIgnoreCase);
+                assemblyWildcards = info.AllowedAssemblies.Where(a => a.StartsWith("$")).Select(a => new Regex(a[1..], RegexOptions.IgnoreCase)).ToList();
+            }
+            
             foreach (var filePath in filePaths)
             {
                 var fileName = Path.GetFileName(filePath);
                 try
                 {
                     using var module = ModuleDefMD.Load(await File.ReadAllBytesAsync(filePath));
-                    if (allowedAssemblies != null && !allowedAssemblies.Remove(module.Assembly.Name))
+
+                    if (allowedAssemblies != null && !allowedAssemblies.Remove(module.Assembly.Name) && !assemblyWildcards.Any(p => p.IsMatch(module.Assembly.Name)))
                         throw new PackageUploadException($"Assembly {module.Assembly.Name} is not in allowed list");
 
                     if (!info.SkipStripping)
