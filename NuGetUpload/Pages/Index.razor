@@ -33,7 +33,7 @@
         </div>
         <div class="mb-3">
             <label for="versionInput" class="form-label">Game version</label>
-            <input type="text" class="form-control @(VersionInvalid ? "is-invalid" : "")" id="versionInput" @bind="GameVersion" placeholder="X.Y.Z.W"/>
+            <input type="text" class="form-control @(VersionInvalid || VersionEmpty != null && VersionEmpty.Value ? "is-invalid" : "")" id="versionInput" @bind="GameVersion" placeholder="X.Y.Z.W"/>
             <div class="form-text">
                 Allowed format: <code>X.Y.Z.W</code>. Only numbers allowed.
                 Try to match game's version as close as possible.
@@ -42,7 +42,7 @@
         </div>
         <div class="mb-3">
             <label for="versionInput" class="form-label">Unity version</label>
-            <input type="text" class="form-control @(UnityVersionInvalid ? "is-invalid" : "")" disabled="@(!IsIl2Cpp)" id="unityVersionInput" @bind="UnityVersion" placeholder="X.Y.Z"/>
+            <input type="text" class="form-control @(UnityVersionInvalid || UnityVersionEmpty != null && UnityVersionEmpty.Value ? "is-invalid" : "")" disabled="@(!IsIl2Cpp)" id="unityVersionInput" @bind="UnityVersion" placeholder="X.Y.Z"/>
             <div class="form-text">
                 Required only for IL2CPP games. Allowed format: <code>X.Y.Z</code>. Only numbers allowed.
             </div>
@@ -110,8 +110,31 @@
         }
     }
 
-    private string GameVersion { get; set; } = string.Empty;
-    private string UnityVersion { get; set; } = string.Empty;
+    private string _gameVersion = string.Empty;
+
+    private string GameVersion
+    {
+        get => _gameVersion;
+        set
+        {
+            _gameVersion = value;
+            VersionEmpty = string.IsNullOrWhiteSpace(value);
+        }
+    }
+
+    private string _unityVersion = string.Empty;
+
+    private string UnityVersion
+    {
+        get => _unityVersion;
+        set
+        {
+            _unityVersion = value;
+            UnityVersionEmpty = string.IsNullOrWhiteSpace(value);
+        }
+    }
+
+
     private List<IBrowserFile> Assemblies { get; } = new();
     private List<string> FileErrors { get; } = new();
     private bool Uploading { get; set; }
@@ -120,6 +143,8 @@
     private string Status { get; set; }
     private bool ProgressError { get; set; }
     private bool KeyError { get; set; }
+    private bool? VersionEmpty { get; set; }
+    private bool? UnityVersionEmpty { get; set; }
 
     private bool IsIl2Cpp { get; set; }
 
@@ -129,7 +154,12 @@
 
     private bool KeyInvalid => KeyError || Key.Length > 0 && Key.Length != GamePackageInfoService.KEY_LENGTH;
 
-    private bool CanUpload => !VersionInvalid && !KeyInvalid && Assemblies.Count > 0 && FileErrors.Count <= 0;
+    private bool CanUpload => !(VersionEmpty == null || VersionEmpty.Value)
+                              && !VersionInvalid
+                              && (!IsIl2Cpp || IsIl2Cpp && !(UnityVersionEmpty == null || UnityVersionEmpty.Value) && !UnityVersionInvalid)
+                              && !KeyInvalid
+                              && Assemblies.Count > 0 && FileErrors.Count <= 0 
+                              && !KeyError;
 
     private async Task UploadPackage()
     {
