@@ -75,4 +75,5 @@ public class GamePackageInfo
     public bool SkipStripping { get; set; }
     public bool SkipDuplicateMitigation { get; set; }
     public bool IsIl2Cpp { get; set; }
+    public bool SkipPublicizing { get; set; }
 }

@@ -156,7 +156,7 @@ public class PackageUploadService
                 if (!info.SkipStripping)
                 {
                     Step($"Stripping and publicising {fileName}");
-                    AssemblyStripper.StripAssembly(module);
+                    AssemblyStripper.StripAssembly(module, !info.SkipPublicizing);
                     module.Write(filePath);
                 }
             }

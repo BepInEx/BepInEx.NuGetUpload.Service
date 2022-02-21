@@ -15,9 +15,9 @@ public static class AssemblyStripper
     private static readonly ConstructorInfo AttributeCtor = typeof(Attribute).GetConstructor(
         BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
 
-    public static void StripAssembly(ModuleDefMD module)
+    public static void StripAssembly(ModuleDefMD module, bool publicize = true)
     {
-        var (pubType, pubCtor) = CreatePublicizedAttribute(module);
+        var (pubType, pubCtor) = publicize ? CreatePublicizedAttribute(module) : (null, null);
 
         foreach (var typeDef in module.GetTypes())
         {
@@ -25,7 +25,8 @@ public static class AssemblyStripper
                 continue;
 
             Strip(typeDef);
-            Publicize(typeDef, pubCtor);
+            if (publicize)
+                Publicize(typeDef, pubCtor);
         }
     }
 
