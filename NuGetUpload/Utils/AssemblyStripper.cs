@@ -134,6 +134,7 @@ public static class AssemblyStripper
                     new[] { new CAArgument(td.Module.CorLibTypes.Int32, GetAccessType(fieldDef)) }));
 
             fieldDef.Attributes &= ~FieldAttributes.FieldAccessMask;
+            fieldDef.Attributes &= ~FieldAttributes.InitOnly;
             fieldDef.Attributes |= FieldAttributes.Public;
         }
     }
