@@ -6,7 +6,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using dnlib.DotNet;
+using AsmResolver.DotNet;
+using BepInEx.AssemblyPublicizer;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -147,17 +148,17 @@ public class PackageUploadService
             var fileName = Path.GetFileName(filePath);
             try
             {
-                using var module = ModuleDefMD.Load(await File.ReadAllBytesAsync(filePath));
+                var assembly = AssemblyDefinition.FromFile(filePath);
 
-                if (allowedAssemblies != null && !allowedAssemblies.Remove(module.Assembly.Name) &&
-                    !assemblyWildcards.Any(p => p.IsMatch(module.Assembly.Name)))
-                    throw new PackageUploadException($"Assembly {module.Assembly.Name} is not in allowed list");
+                if (allowedAssemblies != null)
+                    if (assembly.Name is null || (!allowedAssemblies.Remove(assembly.Name) && !assemblyWildcards.Any(p => p.IsMatch(assembly.Name))))
+                        throw new PackageUploadException($"Assembly {assembly.Name} is not in allowed list");
 
                 if (!info.SkipStripping)
                 {
                     Step($"Stripping and publicising {fileName}");
-                    AssemblyStripper.StripAssembly(module, !info.SkipPublicizing);
-                    module.Write(filePath);
+                    AssemblyPublicizer.Publicize(assembly, new AssemblyPublicizerOptions { Strip = true, Target = info.SkipPublicizing ? PublicizeTarget.None : PublicizeTarget.All });
+                    assembly.Write(filePath);
                 }
             }
             catch (Exception e)

@@ -6,9 +6,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="dnlib" Version="3.3.5"/>
-        <PackageReference Include="NuGet.Packaging" Version="6.0.0"/>
-        <PackageReference Include="NuGet.Protocol" Version="6.0.0"/>
+        <PackageReference Include="NuGet.Packaging" Version="6.3.0"/>
+        <PackageReference Include="NuGet.Protocol" Version="6.3.0"/>
+        <PackageReference Include="BepInEx.AssemblyPublicizer" Version="0.1.0"/>
     </ItemGroup>
 
     <ItemGroup>
