@@ -132,16 +132,15 @@ public class PackageUploadService
             }
         }
 
-        HashSet<string> allowedAssemblies = null;
-        List<Regex> assemblyWildcards = new();
+        HashSet<string> foundAssemblies = new();
+        WildcardMatcher assemblyWildcards = null;
+        WildcardMatcher assemblyNoPublicizeWildcards = null;
 
         if (info.AllowedAssemblies != null)
-        {
-            allowedAssemblies = new HashSet<string>(info.AllowedAssemblies.Where(a => !a.StartsWith("$")),
-                StringComparer.InvariantCultureIgnoreCase);
-            assemblyWildcards = info.AllowedAssemblies.Where(a => a.StartsWith("$"))
-                .Select(a => new Regex(a[1..], RegexOptions.IgnoreCase)).ToList();
-        }
+            assemblyWildcards = new WildcardMatcher(info.AllowedAssemblies);
+
+        if (info.SkipPublicizingAssemblies != null)
+            assemblyNoPublicizeWildcards = new WildcardMatcher(info.SkipPublicizingAssemblies);
 
         foreach (var filePath in filePaths)
         {
@@ -150,14 +149,25 @@ public class PackageUploadService
             {
                 var assembly = AssemblyDefinition.FromFile(filePath);
 
-                if (allowedAssemblies != null)
-                    if (assembly.Name is null || (!allowedAssemblies.Remove(assembly.Name) && !assemblyWildcards.Any(p => p.IsMatch(assembly.Name))))
+                if (assembly.Name is null)
+                    throw new PackageUploadException(
+                        $"Assembly {fileName} doesn't have a set Assembly name. Is it a valid assembly?");
+
+                if (assemblyWildcards != null)
+                    if (!assemblyWildcards.IsMatch(assembly.Name))
                         throw new PackageUploadException($"Assembly {assembly.Name} is not in allowed list");
+                    else
+                        foundAssemblies.Add(assembly.Name);
 
                 if (!info.SkipStripping)
                 {
                     Step($"Stripping and publicising {fileName}");
-                    AssemblyPublicizer.Publicize(assembly, new AssemblyPublicizerOptions { Strip = true, Target = info.SkipPublicizing ? PublicizeTarget.None : PublicizeTarget.All });
+                    var publicizeTarget =
+                        info.SkipPublicizing || (assemblyNoPublicizeWildcards?.IsMatch(assembly.Name) ?? false)
+                            ? PublicizeTarget.None
+                            : PublicizeTarget.All;
+                    AssemblyPublicizer.Publicize(assembly,
+                        new AssemblyPublicizerOptions {Strip = true, Target = publicizeTarget});
                     assembly.Write(filePath);
                 }
             }
@@ -167,9 +177,18 @@ public class PackageUploadService
             }
         }
 
-        if (allowedAssemblies != null && allowedAssemblies.Count > 0)
+        HashSet<string> notFoundAssemblies = null;
+        if (assemblyWildcards is {DirectMatches: {Count: > 0}})
+        {
+            var allAssemblies =
+                new HashSet<string>(assemblyWildcards.DirectMatches, StringComparer.InvariantCultureIgnoreCase);
+            allAssemblies.ExceptWith(foundAssemblies);
+            notFoundAssemblies = allAssemblies;
+        }
+
+        if (notFoundAssemblies is {Count: > 0})
             throw new PackageUploadException(
-                $"The following assemblies are missing: {string.Join(", ", allowedAssemblies)}. Please include all assemblies.");
+                $"The following assemblies are missing: {string.Join(", ", notFoundAssemblies)}. Please include all assemblies.");
 
         Step("Querying existing package metadata");
 

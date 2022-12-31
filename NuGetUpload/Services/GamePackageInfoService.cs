@@ -76,4 +76,5 @@ public class GamePackageInfo
     public bool SkipDuplicateMitigation { get; set; }
     public bool IsIl2Cpp { get; set; }
     public bool SkipPublicizing { get; set; }
+    public string[] SkipPublicizingAssemblies { get; set; }
 }
