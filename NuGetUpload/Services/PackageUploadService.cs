@@ -147,7 +147,9 @@ public class PackageUploadService
             var fileName = Path.GetFileName(filePath);
             try
             {
-                var assembly = AssemblyDefinition.FromFile(filePath);
+                var assembly = AsmResolverHelper.FromFile(filePath);
+                var module = assembly.ManifestModule ?? throw new NullReferenceException("The assembly has no manifest module");
+                module.MetadataResolver = new DefaultMetadataResolver(NoopAssemblyResolver.Instance);
 
                 if (assembly.Name is null)
                     throw new PackageUploadException(
@@ -168,7 +170,7 @@ public class PackageUploadService
                             : PublicizeTarget.All;
                     AssemblyPublicizer.Publicize(assembly,
                         new AssemblyPublicizerOptions {Strip = true, Target = publicizeTarget});
-                    assembly.Write(filePath);
+                    module.FatalWrite(filePath);
                 }
             }
             catch (Exception e)
